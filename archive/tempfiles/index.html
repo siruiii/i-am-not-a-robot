@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>reCAPTCHA demo: Multiple verifications required</title>
+    <script type="text/javascript">
+      var successfulCaptchas = 0; // Counter for successful CAPTCHAs
+      var requiredCaptchas = 21; // Number of required CAPTCHA completions
+
+      function verifyCallback(response) {
+        successfulCaptchas++;
+        if (successfulCaptchas >= requiredCaptchas) {
+          document.getElementById('verifyButton').disabled = false;
+        }
+      }
+
+      function onloadCallback() {
+        for (let i = 1; i <= requiredCaptchas; i++) {
+          let captchaDiv = document.createElement("div");
+          captchaDiv.id = "captcha" + i;
+          document.getElementById("captcha-container").appendChild(captchaDiv);
+          grecaptcha.render(captchaDiv.id, {
+            'sitekey': '6Le2tuYqAAAAAAeR7iAH6OPAodsA5UzzQ_0xoOSa',
+            'callback': verifyCallback,
+            'theme': 'light'
+          });
+        }
+      }
+
+      function verifyUser() {
+        alert('Verification successful!');
+      }
+    </script>
+  </head>
+  <body>
+    <p>This is a Completely Automated Public Turing test to Tell Computers and Humans Apart.</p>
+    <div id="captcha-container" style="display: flex; flex-wrap: wrap; gap: 10px;"></div>
+    <br>
+    <button id="verifyButton" onclick="verifyUser()" disabled>Verify</button>
+    <script src="https://www.google.com/recaptcha/api.js?onload=onloadCallback&render=explicit" async defer></script>
+  </body>
+</html>

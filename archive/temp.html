@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Human Labor Log</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-2.2.4.min.js" crossorigin="anonymous"></script>
+    <script src="mgGlitch.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.1/p5.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/simplepeer.min.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/socket.io.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/p5livemedia.js"></script>
+    <style>
+        body {
+            background-color: black;
+            color: limegreen;
+            font-family: monospace;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1280px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            background: rgba(0, 0, 0, 0.9);
+            position: relative;
+            padding: 10px;
+            height: 100%;
+            max-height: 800px;
+            box-sizing: border-box;
+        }
+
+        .stats-row {
+            display: flex;
+            width: 95%;
+            justify-content: space-between;
+            margin: 25px 0;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        .stats-panel {
+            flex: 1;
+            margin: 0 5px;
+            padding: 10px;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            border: 1px solid limegreen;
+            border-radius: 5px;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+        
+        .full-width {
+            width: 100%;
+        }
+        
+        .single-panel {
+            margin-bottom: 5px;
+        }
+        
+        .dual-panel {
+            margin-top: 0;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: calc(100% - 150px);
+            margin-top: 10px;
+            position: relative;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+        }
+
+        /* Media query for 1280x800 screen */
+        @media screen and (max-width: 1280px) and (max-height: 800px) {
+            .stats-panel {
+                font-size: 32px;
+                padding: 20px;
+            }
+            
+            .chart-container {
+                margin-top: 10px;
+                padding: 20px;
+            }
+        }
+        
+        #temp-container {
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            transform: scale(0.95);
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+        
+        .fade-in {
+            opacity: 1 !important;
+            transform: scale(1) !important;
+        }
+        
+        .fade-out {
+            opacity: 0 !important;
+            transform: scale(0.95) !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="temp-container">
+        <div class="stats-row single-panel">
+            <div class="stats-panel full-width" id="statsPanel1">MouseX: 0, MouseY: 0</div>
+        </div>
+        <div class="stats-row dual-panel">
+            <div class="stats-panel" id="statsPanel2">Clicks: 0</div>
+            <div class="stats-panel" id="statsPanel3">reCAPTCHA: 0</div>
+        </div>
+        <div class="chart-container">
+            <canvas id="clickChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // When the page loads, fade in the content with a more dramatic effect
+        window.addEventListener('DOMContentLoaded', function() {
+            // Add a small delay to ensure the initial state is properly set
+            setTimeout(function() {
+                const container = document.getElementById('temp-container');
+                
+                // Start the animation
+                container.classList.add('fade-in');
+                
+                // Add some animated elements sequentially
+                setTimeout(() => document.querySelector('.single-panel').style.opacity = '1', 300);
+                setTimeout(() => document.querySelector('.dual-panel').style.opacity = '1', 500);
+                setTimeout(() => document.querySelector('.chart-container').style.opacity = '1', 700);
+            }, 100);
+        });
+    
+        // Event listener for key release - go back to stats.html
+        document.addEventListener('keyup', function(event) {
+            if (event.key === 'w') {
+                // Start fading out
+                document.getElementById('temp-container').classList.remove('fade-in');
+                document.getElementById('temp-container').classList.add('fade-out');
+                
+                // After fade out completes, navigate to stats.html
+                setTimeout(function() {
+                    window.location.href = 'stats.html';
+                }, 500); // Match this with the CSS transition duration
+            }
+        });
+
+        let p5lm;
+        let clickCount = 0;
+        let lastClickTime = Date.now();
+        let clickData = [];
+        let timeLabels = [];
+        let chartInstance;
+        
+        // Initialize with past data
+        for (let i = 0; i < 6; i++) {
+            timeLabels.push("");
+            clickData.push(0);
+        }
+
+        function setup() {
+            noCanvas();
+            p5lm = new p5LiveMedia(this, "DATA", null, "123qwe");
+            p5lm.on("data", gotData);
+        }
+
+        function gotData(data, id) {
+            let receivedData = JSON.parse(data);
+            show(receivedData.x, receivedData.y, receivedData.click, receivedData.peak, receivedData.count);
+            
+            // Update our click count from p5 data
+            clickCount = receivedData.click;
+            
+            // We'll update the chart on the 5-second interval instead of on every data packet
+        }
+
+        function show(x, y, click, peak, count) {
+            document.getElementById("statsPanel1").innerText = `MouseX: ${x}, MouseY: ${y}`;
+            document.getElementById("statsPanel2").innerText = `Clicks: ${click}`;
+            document.getElementById("statsPanel3").innerText = `reCAPTCHA: ${count}`;
+        }
+
+        const ctx = document.getElementById("clickChart").getContext("2d");
+        
+        function initializeChart() {
+            chartInstance = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: "Clicks per 5s",
+                        data: clickData,
+                        borderColor: "limegreen",
+                        backgroundColor: "rgba(0, 255, 0, 0.2)",
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 1000
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        x: { 
+                            title: { 
+                                display: true, 
+                                text: "Time (s)",
+                                color: "limegreen"
+                            },
+                            ticks: {
+                                color: "limegreen",
+                                maxRotation: 0,
+                                autoSkip: true
+                            },
+                            grid: {
+                                color: "rgba(0, 255, 0, 0.1)"
+                            }
+                        },
+                        y: { 
+                            title: { 
+                                display: true, 
+                                text: "Clicks per 5s",
+                                color: "limegreen" 
+                            }, 
+                            beginAtZero: true,
+                            ticks: {
+                                color: "limegreen"
+                            },
+                            grid: {
+                                color: "rgba(0, 255, 0, 0.1)"
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        let lastRecordedClickCount = 0;
+        
+        function updateChartWithLatestData() {
+            const now = Date.now();
+            const clicksInInterval = clickCount - lastRecordedClickCount;
+            lastRecordedClickCount = clickCount;
+            
+            // Shift data array if we have enough points
+            if (clickData.length >= 6) {
+                clickData.shift();
+                timeLabels.shift();
+            }
+            
+            // Add new data point
+            const timeStr = new Date().toLocaleTimeString().split(" ")[0];
+            timeLabels.push(timeStr);
+            clickData.push(clicksInInterval);
+            
+            // Update chart
+            chartInstance.update();
+        }
+
+        // Initialize chart right away
+        initializeChart();
+        
+        // Only update chart on the 5-second interval, not on every data packet
+        let lastUpdateTime = Date.now();
+        
+        function checkForScheduledUpdate() {
+            const now = Date.now();
+            if (now - lastUpdateTime >= 5000) {
+                updateChartWithLatestData();
+                lastUpdateTime = now;
+            }
+        }
+        
+        // Run the update check frequently, but only update chart every 5 seconds
+        setInterval(checkForScheduledUpdate, 100);
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            if (chartInstance) {
+                chartInstance.resize();
+            }
+        });
+    </script>
+</body>
+</html>

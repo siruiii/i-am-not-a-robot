@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Smooth Heatmap</title>
+    
+    <!-- p5.js and p5LiveMedia for real-time data -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.1/p5.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/simplepeer.min.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/socket.io.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/p5livemedia.js"></script>
+
+    <!-- Heatmap.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/heatmap.js/2.0.2/heatmap.min.js"></script>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: rgba(229, 229, 254, 0.1);
+      }
+      #heatmapContainer {
+        width: 100vw;
+        height: 100vh;
+        position: absolute;
+        top: 0;
+        left: 0;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="heatmapContainer"></div>
+
+    <script>
+      let heatmapInstance;
+      let p5lm;
+
+      function setup() {
+        noCanvas();
+
+        // Initialize heatmap.js with smoother transitions
+        heatmapInstance = h337.create({
+          container: document.getElementById("heatmapContainer"),
+          radius: 80, // Increased for smoother heat distribution
+          maxOpacity: 0.4,
+          minOpacity: 0.2,
+          blur: 0.95, // Higher blur for smooth transitions
+          gradient: {
+            0.1: "blue",
+            0.3: "cyan",
+            0.5: "green",
+            0.7: "yellow",
+            1.0: "red"
+          }
+        });
+
+        // Setup p5LiveMedia for real-time data sharing
+        p5lm = new p5LiveMedia(this, "DATA", null, "123qwe");
+        p5lm.on("data", gotData);
+      }
+
+      function gotData(data, id) {
+        let receivedData = JSON.parse(data);
+        updateHeatmap(receivedData.x, receivedData.y);
+      }
+
+      function updateHeatmap(x, y) {
+        heatmapInstance.addData({ x, y, value: 1 });
+      }
+    </script>
+  </body>
+</html>

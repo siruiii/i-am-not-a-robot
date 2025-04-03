@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto Mouse Movement Replay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #121212;
+            font-family: Arial, sans-serif;
+            color: #ffffff;
+        }
+        
+        #replay-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* SVG cursor */
+        #cursor {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            transform: translate(-50%, -50%);
+            transition: left 0.1s linear, top 0.1s linear;
+            pointer-events: none;
+            z-index: 1000;
+            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.7));
+            color: white;
+        }
+        
+        /* Ripple effect for clicks */
+        .ripple {
+            position: absolute;
+            border-radius: 50%;
+            border: 2px solid white;
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 900;
+            animation: rippleEffect 1.5s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+        }
+        
+        @keyframes rippleEffect {
+            0% {
+                width: 0;
+                height: 0;
+                opacity: 1;
+            }
+            100% {
+                width: 150px;
+                height: 150px;
+                opacity: 0;
+            }
+        }
+        
+        /* Loading overlay */
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+        }
+        
+        .loader {
+            border: 5px solid #333;
+            border-top: 5px solid #ff5722;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="loader"></div>
+        <div id="loading-text">Loading sessions...</div>
+    </div>
+    
+    <div id="session-display" style="position: fixed; top: 10px; left: 10px; z-index: 2000; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 4px; font-size: 14px;">
+        Session: <span id="current-session-number">0</span> / <span id="total-sessions">0</span>
+    </div>
+    
+    <div id="replay-container">
+        <div id="cursor">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-cursor" viewBox="0 0 16 16">
+                <path d="M14.082 2.182a.5.5 0 0 1 .103.557L8.528 15.467a.5.5 0 0 1-.917-.007L5.57 10.694.803 8.652a.5.5 0 0 1-.006-.916l12.728-5.657a.5.5 0 0 1 .556.103zM2.25 8.184l3.897 1.67a.5.5 0 0 1 .262.263l1.67 3.897L12.743 3.52z"/>
+            </svg>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const replayContainer = document.getElementById('replay-container');
+        const cursor = document.getElementById('cursor');
+        const loadingEl = document.getElementById('loading');
+        const loadingTextEl = document.getElementById('loading-text');
+        const currentSessionNumberEl = document.getElementById('current-session-number');
+        const totalSessionsEl = document.getElementById('total-sessions');
+        
+        // State variables
+        let mouseEvents = [];
+        let currentIndex = 1;
+        let isPlaying = false;
+        const playbackSpeed = 0.1; // Fixed playback speed as requested
+        let animationFrameId = null;
+        let lastTimestamp = 0;
+        let sessions = [];
+        let currentSessionIndex = 0;
+        
+        // Fetch all available sessions
+        async function fetchSessions() {
+            try {
+                loadingTextEl.textContent = 'Loading sessions...';
+                
+                const response = await fetch('/api/sessions');
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch sessions');
+                }
+                
+                sessions = await response.json();
+                
+                if (sessions.length === 0) {
+                    throw new Error('No sessions found');
+                }
+                
+                // Update session counter
+                totalSessionsEl.textContent = sessions.length;
+                currentSessionNumberEl.textContent = currentSessionIndex + 1;
+                
+                loadingEl.style.display = 'none';
+                return true;
+            } catch (error) {
+                console.error('Error fetching sessions:', error);
+                loadingTextEl.textContent = 'Error: ' + error.message;
+                
+                // Hide loading after 2 seconds
+                setTimeout(() => {
+                    loadingEl.style.display = 'none';
+                }, 2000);
+                
+                return false;
+            }
+        }
+        
+        // Fetch mouse events for a specific session
+        async function fetchMouseEvents(sessionId) {
+            loadingTextEl.textContent = 'Loading mouse events...';
+            loadingEl.style.display = 'flex';
+            
+            try {
+                let url = `/api/mouse-events?sessionId=${sessionId}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch mouse events');
+                }
+                
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    mouseEvents = data;
+                    loadingEl.style.display = 'none';
+                    return true;
+                } else {
+                    throw new Error('No mouse events found for this session');
+                }
+            } catch (error) {
+                console.error('Error fetching mouse events:', error);
+                loadingTextEl.textContent = 'Error: ' + error.message;
+                
+                // Hide loading after 2 seconds
+                setTimeout(() => {
+                    loadingEl.style.display = 'none';
+                }, 2000);
+                
+                return false;
+            }
+        }
+        
+        // Create a ripple effect at a specific position
+        function createRipple(x, y) {
+            const ripple = document.createElement('div');
+            ripple.className = 'ripple';
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+            replayContainer.appendChild(ripple);
+            
+            // Remove ripple element after animation completes
+            setTimeout(() => {
+                ripple.remove();
+            }, 1500);
+        }
+        
+        // Update cursor position
+        function updateCursorPosition(x, y) {
+            cursor.style.left = x + 'px';
+            cursor.style.top = y + 'px';
+        }
+        
+        // Animation loop
+        function animate(timestamp) {
+            if (!isPlaying) {
+                return;
+            }
+            
+            // Check if we've reached the end of the current session
+            if (currentIndex >= mouseEvents.length) {
+                // Move to the next session
+                moveToNextSession();
+                return;
+            }
+            
+            // Calculate time difference based on playback speed
+            const timeElapsed = timestamp - lastTimestamp;
+            
+            if (timeElapsed > (50 / playbackSpeed)) {
+                const event = mouseEvents[currentIndex];
+                
+                // Update cursor position
+                updateCursorPosition(event.x, event.y);
+                
+                // Create ripple effect for clicks
+                if (event.eventType === 'click') {
+                    createRipple(event.x, event.y);
+                }
+                
+                // Move to next event
+                currentIndex++;
+                lastTimestamp = timestamp;
+            }
+            
+            // Request next frame
+            animationFrameId = requestAnimationFrame(animate);
+        }
+        
+        // Move to the next session
+        async function moveToNextSession() {
+            // Increment session index
+            currentSessionIndex++;
+            
+            // Check if we need to wrap around to the first session
+            if (currentSessionIndex >= sessions.length) {
+                currentSessionIndex = 0;
+                
+                // When we've gone through all sessions, check for new ones
+                await refreshSessions();
+            }
+            
+            // Update session counter display
+            currentSessionNumberEl.textContent = currentSessionIndex + 1;
+            
+            // Load the next session
+            await loadSession(sessions[currentSessionIndex]._id);
+        }
+        
+        // Refresh sessions list
+        async function refreshSessions() {
+            const hadSessions = sessions.length > 0;
+            await fetchSessions();
+            
+            // If we didn't have sessions before but now we do, start from the first one
+            if (!hadSessions && sessions.length > 0) {
+                currentSessionIndex = 0;
+                await loadSession(sessions[0]._id);
+            }
+        }
+        
+        // Load a specific session
+        async function loadSession(sessionId) {
+            isPlaying = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            
+            currentIndex = 1;
+            
+            // Fetch mouse events for the session
+            await fetchMouseEvents(sessionId);
+            
+            // Set initial cursor position if events are available
+            if (mouseEvents.length > 0) {
+                updateCursorPosition(mouseEvents[0].x, mouseEvents[0].y);
+            }
+            
+            // Start playing the session
+            startPlayback();
+        }
+        
+        // Start playback
+        function startPlayback() {
+            if (!isPlaying && mouseEvents.length > 0) {
+                isPlaying = true;
+                lastTimestamp = performance.now();
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+        
+        // Initialize the application
+        async function init() {
+            // Fetch available sessions
+            await fetchSessions();
+            
+            // If sessions are available, start with the first one
+            if (sessions.length > 0) {
+                await loadSession(sessions[0]._id);
+            }
+        }
+        
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

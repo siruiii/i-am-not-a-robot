@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>I'm Not a Robot (L)</title>
+    <link href='https://fonts.googleapis.com/css?family=Roboto:400,900,300' rel='stylesheet' type='text/css'>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://code.jquery.com/jquery-2.2.4.min.js" crossorigin="anonymous"></script>
+    <script src="glitch-effect/mgGlitch.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.1/p5.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/simplepeer.min.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/socket.io.js"></script>
+    <script type="text/javascript" src="https://p5livemedia.itp.io/p5livemedia.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            overflow: hidden;
+            overscroll-behavior: none;
+            touch-action: none;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+        }
+        *, *:after, *:before {-moz-box-sizing:border-box; box-sizing:border-box;}
+        body, html {
+            height: 100vh; 
+            width: 100vw;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            position: fixed; /* Lock the body */
+        }
+        body {
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            color: #ffffff;
+        }
+        .interface-container {
+            position: fixed; /* Use fixed instead of absolute */
+            top: 0;
+            left: 0;
+            width: 100vw; /* Use viewport width */
+            height: 100vh; /* Use viewport height */
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            overflow: hidden; /* Prevent overflow */
+        }
+        #stats-container {
+            z-index: 10;
+            background-color: #000;
+            opacity: 1;
+            overflow: hidden; /* Prevent content from causing scrollbars */
+            width: 100vw; /* Use viewport units */
+            height: 100vh;
+            position: fixed; /* Fix the position */
+        }
+        .glitch-img {
+            position: absolute; 
+            width: 100%; 
+            height: 100%; 
+            top: 0; 
+            left: 0; 
+            background-position: center;  
+            -moz-background-size: cover;
+            -o-background-size: cover;
+            -webkit-background-size: cover;
+            background-size: cover;
+            overflow: hidden; /* Contain any glitch overflow */
+        }
+        
+        /* Mouse replay interface styles (from temp2.html) */
+        #replay-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            z-index: 5;
+            background-color: #121212;
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        
+        /* SVG cursor */
+        #cursor {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            transform: translate(-50%, -50%);
+            transition: left 0.1s linear, top 0.1s linear;
+            pointer-events: none;
+            z-index: 1000;
+            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.7));
+            color: white;
+        }
+        
+        /* Ripple effect for clicks */
+        .ripple {
+            position: absolute;
+            border-radius: 50%;
+            border: 2px solid white;
+            background-color: rgba(255, 255, 255, 0.2);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 900;
+            animation: rippleEffect 1.5s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+        }
+        
+        @keyframes rippleEffect {
+            0% {
+                width: 0;
+                height: 0;
+                opacity: 1;
+            }
+            100% {
+                width: 150px;
+                height: 150px;
+                opacity: 0;
+            }
+        }
+        
+        /* Loading overlay */
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+        }
+        
+        .loader {
+            border: 5px solid #333;
+            border-top: 5px solid #ff5722;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #session-display {
+            position: fixed; 
+            top: 10px; 
+            left: 10px; 
+            z-index: 2000; 
+            background: rgba(0,0,0,0.5); 
+            padding: 8px; 
+            border-radius: 4px; 
+            font-size: 14px;
+        }
+        
+        /* Visibility classes */
+        .visible {
+            opacity: 1 !important;
+            transform: scale(1) !important;
+        }
+        
+        .hidden {
+            opacity: 0 !important;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Stats/Glitch Interface -->
+    <div class="interface-container" id="stats-container">
+        <div class="glitch-img" style="background-image: url('glitch-effect/glitch-image.png')"></div>
+    </div>
+    
+    <!-- Loading overlay -->
+    <div id="loading">
+        <div class="loader"></div>
+        <div id="loading-text">Loading sessions...</div>
+    </div>
+    
+    <!-- Session display info -->
+    <div id="session-display">
+        Session: <span id="current-session-number">0</span> / <span id="total-sessions">0</span>
+    </div>
+    
+    <!-- Mouse replay container (replacing temp container) -->
+    <div class="interface-container" id="replay-container">
+        <div id="cursor">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="currentColor" class="bi bi-cursor" viewBox="0 0 16 16">
+                <path d="M14.082 2.182a.5.5 0 0 1 .103.557L8.528 15.467a.5.5 0 0 1-.917-.007L5.57 10.694.803 8.652a.5.5 0 0 1-.006-.916l12.728-5.657a.5.5 0 0 1 .556.103zM2.25 8.184l3.897 1.67a.5.5 0 0 1 .262.263l1.67 3.897L12.743 3.52z"/>
+            </svg>
+        </div>
+    </div>
+
+    <script>
+        let p5lm;
+        
+        // DOM Elements
+        const statsContainer = document.getElementById('stats-container');
+        const replayContainer = document.getElementById('replay-container');
+        const cursor = document.getElementById('cursor');
+        const loadingEl = document.getElementById('loading');
+        const loadingTextEl = document.getElementById('loading-text');
+        const currentSessionNumberEl = document.getElementById('current-session-number');
+        const totalSessionsEl = document.getElementById('total-sessions');
+        
+        // State variables for mouse replay
+        let mouseEvents = [];
+        let currentIndex = 1;
+        let isPlaying = false;
+        const playbackSpeed = 0.5; // Fixed playback speed as requested
+        let animationFrameId = null;
+        let lastTimestamp = 0;
+        let sessions = [];
+        let currentSessionIndex = 0;
+        
+        // Function to toggle between interfaces
+        function toggleInterface(showReplay) {
+            if (showReplay) {
+                // First hide stats interface
+                statsContainer.classList.add('hidden');
+                
+                // Then show replay interface after a short delay
+                setTimeout(() => {
+                    replayContainer.classList.add('visible');
+                }, 500); // Wait for stats to fade out first
+            } else {
+                // First hide replay interface
+                replayContainer.classList.remove('visible');
+                
+                // Then show stats interface after replay has faded out
+                setTimeout(() => {
+                    statsContainer.classList.remove('hidden');
+                }, 500);
+            }
+        }
+        
+        // Event listeners for key press
+        let wIsPressed = false;
+        
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'r' && !wIsPressed) {
+                wIsPressed = true;
+                toggleInterface(true);
+            }
+        });
+
+        document.addEventListener('keyup', function(event) {
+            if (event.key === 'r') {
+                wIsPressed = false;
+                toggleInterface(false);
+            }
+        });
+
+        // P5.js setup function
+        function setup() {
+            noCanvas();
+            p5lm = new p5LiveMedia(this, "DATA", null, "123qwe");
+            p5lm.on("data", gotData);
+        }
+
+        function gotData(data, id) {
+            // This function handles p5 data but doesn't update any UI in our new implementation
+            let receivedData = JSON.parse(data);
+            // We could do something with the data here if needed
+        }
+        
+        // Mouse replay functions
+        async function fetchSessions() {
+            try {
+                loadingTextEl.textContent = 'Loading sessions...';
+                
+                const response = await fetch('/api/sessions');
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch sessions');
+                }
+                
+                sessions = await response.json();
+                
+                if (sessions.length === 0) {
+                    throw new Error('No sessions found');
+                }
+                
+                // Update session counter
+                totalSessionsEl.textContent = sessions.length;
+                currentSessionNumberEl.textContent = currentSessionIndex + 1;
+                
+                loadingEl.style.display = 'none';
+                return true;
+            } catch (error) {
+                console.error('Error fetching sessions:', error);
+                loadingTextEl.textContent = 'Error: ' + error.message;
+                
+                // Hide loading after 2 seconds
+                setTimeout(() => {
+                    loadingEl.style.display = 'none';
+                }, 2000);
+                
+                return false;
+            }
+        }
+        
+        async function fetchMouseEvents(sessionId) {
+            loadingTextEl.textContent = 'Loading mouse events...';
+            loadingEl.style.display = 'flex';
+            
+            try {
+                let url = `/api/mouse-events?sessionId=${sessionId}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch mouse events');
+                }
+                
+                const data = await response.json();
+                
+                if (data && data.length > 0) {
+                    mouseEvents = data;
+                    loadingEl.style.display = 'none';
+                    return true;
+                } else {
+                    throw new Error('No mouse events found for this session');
+                }
+            } catch (error) {
+                console.error('Error fetching mouse events:', error);
+                loadingTextEl.textContent = 'Error: ' + error.message;
+                
+                // Hide loading after 2 seconds
+                setTimeout(() => {
+                    loadingEl.style.display = 'none';
+                }, 2000);
+                
+                return false;
+            }
+        }
+        
+        function createRipple(x, y) {
+            const ripple = document.createElement('div');
+            ripple.className = 'ripple';
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+            replayContainer.appendChild(ripple);
+            
+            // Remove ripple element after animation completes
+            setTimeout(() => {
+                ripple.remove();
+            }, 1500);
+        }
+        
+        function updateCursorPosition(x, y) {
+            cursor.style.left = x + 'px';
+            cursor.style.top = y + 'px';
+        }
+        
+        function animate(timestamp) {
+            if (!isPlaying) {
+                return;
+            }
+            
+            // Check if we've reached the end of the current session
+            if (currentIndex >= mouseEvents.length) {
+                // Move to the next session
+                moveToNextSession();
+                return;
+            }
+            
+            // Calculate time difference based on playback speed
+            const timeElapsed = timestamp - lastTimestamp;
+            
+            if (timeElapsed > (50 / playbackSpeed)) {
+                const event = mouseEvents[currentIndex];
+                
+                // Update cursor position
+                updateCursorPosition(event.x, event.y);
+                
+                // Create ripple effect for clicks
+                if (event.eventType === 'click') {
+                    createRipple(event.x, event.y);
+                }
+                
+                // Move to next event
+                currentIndex++;
+                lastTimestamp = timestamp;
+            }
+            
+            // Request next frame
+            animationFrameId = requestAnimationFrame(animate);
+        }
+        
+        async function moveToNextSession() {
+            // Increment session index
+            currentSessionIndex++;
+            
+            // Check if we need to wrap around to the first session
+            if (currentSessionIndex >= sessions.length) {
+                currentSessionIndex = 0;
+                
+                // When we've gone through all sessions, check for new ones
+                await refreshSessions();
+            }
+            
+            // Update session counter display
+            currentSessionNumberEl.textContent = currentSessionIndex + 1;
+            
+            // Load the next session
+            await loadSession(sessions[currentSessionIndex]._id);
+        }
+        
+        async function refreshSessions() {
+            const hadSessions = sessions.length > 0;
+            await fetchSessions();
+            
+            // If we didn't have sessions before but now we do, start from the first one
+            if (!hadSessions && sessions.length > 0) {
+                currentSessionIndex = 0;
+                await loadSession(sessions[0]._id);
+            }
+        }
+        
+        async function loadSession(sessionId) {
+            isPlaying = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            
+            currentIndex = 1;
+            
+            // Fetch mouse events for the session
+            await fetchMouseEvents(sessionId);
+            
+            // Set initial cursor position if events are available
+            if (mouseEvents.length > 0) {
+                updateCursorPosition(mouseEvents[0].x, mouseEvents[0].y);
+            }
+            
+            // Start playing the session
+            startPlayback();
+        }
+        
+        function startPlayback() {
+            if (!isPlaying && mouseEvents.length > 0) {
+                isPlaying = true;
+                lastTimestamp = performance.now();
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+        
+        // Initialize the glitch effect
+        $(function() {
+            // Set fixed dimensions first to prevent resize issues
+            const glitchContainer = $(".glitch-img");
+            const windowWidth = $(window).width();
+            const windowHeight = $(window).height();
+            
+            // Apply glitch effect with reduced scaling to minimize resize issues
+            $(".glitch-img").mgGlitch({
+                destroy: false,
+                glitch: true,
+                scale: false, // Disable scaling effect which can cause resizing
+                blend: true,
+                blendModeType: 'hue',
+                glitch1TimeMin: 600,
+                glitch1TimeMax: 900,
+                glitch2TimeMin: 50,
+                glitch2TimeMax: 115,
+                zIndexStart: 8
+            });
+        });
+        
+        // Initialize the application
+        async function init() {
+            // Keep session display initially hidden until w key is pressed
+            document.getElementById('session-display').style.opacity = '0';
+            
+            // Wait for glitch effect to initialize
+            setTimeout(async () => {
+                // Fetch available sessions
+                await fetchSessions();
+                
+                // If sessions are available, start with the first one
+                if (sessions.length > 0) {
+                    await loadSession(sessions[0]._id);
+                }
+                
+                // When w key is pressed, show session display
+                document.addEventListener('keydown', function(event) {
+                    if (event.key === 'r') {
+                        document.getElementById('session-display').style.opacity = '1';
+                    }
+                });
+                
+                document.addEventListener('keyup', function(event) {
+                    if (event.key === 'r') {
+                        document.getElementById('session-display').style.opacity = '0';
+                    }
+                });
+            }, 1000);
+        }
+        
+        // Start the application
+        init();
+    </script>
+</body>
+</html>
