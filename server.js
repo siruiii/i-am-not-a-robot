@@ -7,10 +7,82 @@ const fs = require('fs');
 const path = require('path');
 const SESSION_FILE = path.join(__dirname, 'sessionData.json');
 
-
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
+
+const managerApp = express();
+const managerServer = http.createServer(managerApp);
+const managerWss = new WebSocket.Server({ server: managerServer });
+
+let serverRunning = true;
+
+// Serve the server manager UI
+managerApp.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'server-manager.html'));
+});
+
+// API endpoint to check server status
+managerApp.get('/api/server-status', (req, res) => {
+    res.json({ running: serverRunning });
+});
+
+// API endpoint to start the server
+managerApp.post('/api/start-server', (req, res) => {
+    if (!serverRunning) {
+        server.listen(PORT, () => {
+            serverRunning = true;
+            console.log(`Server started on http://localhost:${PORT}`);
+            res.status(200).json({ success: true });
+        });
+    } else {
+        res.status(400).json({ error: 'Server is already running' });
+    }
+});
+
+// API endpoint to stop the server
+managerApp.post('/api/stop-server', (req, res) => {
+    if (serverRunning) {
+        server.close(() => {
+            serverRunning = false;
+            console.log('Server stopped.');
+            res.status(200).json({ success: true });
+        });
+    } else {
+        res.status(400).json({ error: 'Server is already stopped' });
+    }
+});
+
+// WebSocket message handling for server control
+managerWss.on('connection', (ws) => {
+    ws.send(JSON.stringify({ action: 'server-status', running: serverRunning }));
+
+    ws.on('message', (message) => {
+        const data = JSON.parse(message);
+        if (data.action === 'start-server' && !serverRunning) {
+            server.listen(PORT, () => {
+                serverRunning = true;
+                console.log(`Server started on http://localhost:${PORT}`);
+                broadcastServerStatus();
+            });
+        } else if (data.action === 'stop-server' && serverRunning) {
+            server.close(() => {
+                serverRunning = false;
+                console.log('Server stopped.');
+                broadcastServerStatus();
+            });
+        }
+    });
+});
+
+// Broadcast server status to all WebSocket clients
+function broadcastServerStatus() {
+    managerWss.clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ action: 'server-status', running: serverRunning }));
+        }
+    });
+}
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -121,28 +193,31 @@ function getDistance(pos1, pos2) {
 
 // Function to track mouse position and broadcast it
 const MOVEMENT_THRESHOLD = 200; // Minimum pixel distance to count as a move
+let isMoving = false;
+let noMovementStartTime = null; // Track when no movement started
 
 const sendMousePosition = () => {
     try {
+if (!isMoving) return; // Do not send data if not moving
+
         const pos = robot.getMousePos();
         const mouseData = { 
             x: pos.x, 
             y: pos.y, 
             timestamp: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
             completedCaptchas: sessionData.completedCaptchas,
-            mouseMovements: sessionData.mouseMovements };
+            mouseMovements: sessionData.mouseMovements 
+};
 
         // Count only significant movements
         if (lastMousePos.x !== null && getDistance(pos, lastMousePos) >= MOVEMENT_THRESHOLD) {
             sessionData.mouseMovements += 1;
             lastMousePos = { x: pos.x, y: pos.y };
-            // console.log(`Number of completedCaptchas: ${sessionData.mouseMovements}`);
-            // console.log(`Current pos: ${pos.x}, ${pos.y}`);
-        } else if (lastMousePos.x === null) {
+                    } else if (lastMousePos.x === null) {
             // Initialize position
             lastMousePos = { x: pos.x, y: pos.y };
         }
-
+ 
         // Save movement events approximately once per second
         if (new Date().getMilliseconds() < 100) {
             mouseEvents.push({
@@ -150,7 +225,6 @@ const sendMousePosition = () => {
                 timestamp: new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }),
                 x: pos.x,
                 y: pos.y,
-                eventType: 'move'
             });
 
             if (mouseEvents.length > 10000) {
@@ -169,6 +243,48 @@ const sendMousePosition = () => {
     }
 };
 
+let lastMouseCheckTime = Date.now();
+let lastMouseCheckPos = { x: null, y: null };
+
+const checkMouseMovement = () => {
+    const currentPos = robot.getMousePos();
+    const currentTime = Date.now();
+
+    if (
+        lastMouseCheckPos.x === currentPos.x &&
+        lastMouseCheckPos.y === currentPos.y &&
+        currentTime - lastMouseCheckTime >= 1500
+) {
+        if (!isMoving) {
+            // If already not moving, check if 15 seconds have passed
+            if (noMovementStartTime && currentTime - noMovementStartTime >= 10000) {
+//console.log("No movement detected for 15 seconds. Refreshing page...");
+                wss.clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify({ action: "refresh" })); // Notify clients to refresh
+                    }
+                });
+                noMovementStartTime = null; // Reset no movement timer
+            }
+        } else {
+isMoving = false;
+//console.log("Mouse stopped moving.");
+            noMovementStartTime = currentTime; // Start tracking no movement time
+        }
+  } else if (
+      lastMouseCheckPos.x !== currentPos.x ||
+        lastMouseCheckPos.y !== currentPos.y
+    ) {
+        isMoving = true;
+noMovementStartTime = null; // Reset no movement timer
+        lastMouseCheckTime = currentTime; // Reset the timer
+        lastMouseCheckPos = { x: currentPos.x, y: currentPos.y }; // Update position
+    }
+};
+
+// Call this function every second
+setInterval(checkMouseMovement, 1000);
+
 // Update mouse position every 100ms
 const intervalId = setInterval(sendMousePosition, 100);
 
@@ -176,6 +292,12 @@ const intervalId = setInterval(sendMousePosition, 100);
 const PORT = process.env.PORT;
 server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
+});
+
+// Start the server manager on a different port
+const MANAGER_PORT = process.env.MANAGER_PORT;
+managerServer.listen(MANAGER_PORT, () => {
+    console.log(`Server Manager is running on http://localhost:${MANAGER_PORT}`);
 });
 
 // Graceful Shutdown Handler

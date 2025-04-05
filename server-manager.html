@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Manager</title>
+    <style>
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f9fafb;
+    color: #333;
+    text-align: center;
+    margin: 0;
+    padding: 40px 20px;
+}
+
+h1 {
+    font-size: 2.5rem;
+    margin-bottom: 20px;
+    color: #1f2937;
+}
+
+p {
+    max-width: 700px;
+    margin: 0 auto 30px;
+    line-height: 1.6;
+    font-size: 1.1rem;
+    color: #4b5563;
+}
+
+button {
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    margin: 10px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+    color: #fff;
+    background-color: #3b82f6;
+}
+
+button:hover:not(:disabled) {
+    background-color: #2563eb;
+    transform: scale(1.03);
+}
+
+button:disabled {
+    background-color: #d1d5db;
+    color: #6b7280;
+    cursor: not-allowed;
+}
+
+#status {
+    font-size: 1.2rem;
+    margin-top: 25px;
+    font-weight: 500;
+    color: #111827;
+}
+
+#loading {
+    font-size: 1rem;
+    color: #6b7280;
+    margin-top: 12px;
+    display: none;
+}
+
+    </style>
+</head>
+<body>
+    <h2>I'm Not a Robot — Server Manager</h2>
+
+    <p>This page allows you to manage the server for the <strong>"I'm Not a Robot"</strong> application.</p>
+    <br>
+    <p style="list-style-type: disc; margin: 0 auto 20px; max-width: 600px; text-align: center;">
+        Do not close any of the following tabs: <br>
+        <a href="http://localhost:8000/stats.html" target="_blank">http://localhost:8000/stats.html</a> (left monitor)
+        <a href="http://localhost:8000/index.html" target="_blank">http://localhost:8000/index.html</a> (center monitor in Incognito mode)
+        <a href="http://localhost:8000/roll.html" target="_blank">http://localhost:8000/roll.html</a> (right monitor)
+    </p>
+
+    <p>All three tabs should remain in <strong>full screen mode</strong> throughout the session.</p>
+
+    <div style="display: flex; justify-content: center; gap: 80px; flex-wrap: wrap; margin-top: 20px;">
+        <div style="min-width: 280px; max-width: 400px; text-align: left;">
+            <p style="text-align: center;"><strong>Start of Day</strong></p>
+            <ul style="list-style-type: disc; padding-left: 20px;">
+                <li>Start the server using the button below.</li>
+                <li>Manually refresh each browser tab.</li>
+                <li>Verify that the application is functioning normally.</li>
+            </ul>
+        </div>
+        <div style="min-width: 280px; max-width: 400px; text-align: left;">
+            <p style="text-align: center;"><strong>End of Day</strong></p>
+            <ul style="list-style-type: disc; padding-left: 20px;">
+                <li>Stop the server using the button below.</li>
+                <li>(Wait about 10-15 sec) Manually refresh each browser tab.</li>
+                <li>Each tab should display: <br><em>"This site can’t be reached."</em></li>
+            </ul>
+        </div>
+    </div>
+    
+    <br><br>
+    <button id="start-btn" disabled>Start Server</button>
+    <button id="stop-btn" disabled>Stop Server</button>
+
+    <div id="status">Loading...</div>
+    <div id="loading">Processing...</div>
+
+    <script>
+        const socket = new WebSocket(`ws://localhost:${location.port}`);
+
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const statusDiv = document.getElementById('status');
+        const loadingDiv = document.getElementById('loading');
+
+        socket.onopen = () => {
+            console.log('✅ WebSocket connected to server manager.');
+        };
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.action === 'server-status') {
+                const running = data.running;
+                statusDiv.textContent = running ? '✅ Server is running.' : '❌ Server is stopped.';
+                startBtn.disabled = running;
+                stopBtn.disabled = !running;
+                loadingDiv.style.display = 'none'; // Hide loading indicator
+                console.log(`ℹ️ Server status updated: ${running ? 'Running' : 'Stopped'}`);
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error('❌ WebSocket error:', error);
+            statusDiv.textContent = '⚠️ WebSocket error. Check console for details.';
+        };
+
+        socket.onclose = () => {
+            console.log('🔌 WebSocket disconnected.');
+            statusDiv.textContent = '⚠️ WebSocket disconnected.';
+        };
+
+        startBtn.addEventListener('click', () => {
+            console.log('⏳ Sending request to start the server...');
+            loadingDiv.textContent = 'Starting the server...'; // Update loading message
+            loadingDiv.style.display = 'block'; // Show loading indicator
+            socket.send(JSON.stringify({ action: 'start-server' }));
+        });
+
+        stopBtn.addEventListener('click', () => {
+            console.log('⏳ Sending request to stop the server...');
+            loadingDiv.textContent = 'Stopping the server...'; // Update loading message
+            loadingDiv.style.display = 'block'; // Show loading indicator
+            stopBtn.disabled = true; // Make stop button unclickable
+            socket.send(JSON.stringify({ action: 'stop-server' }));
+        });
+    </script>
+</body>
+</html>
