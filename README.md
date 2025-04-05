@@ -3,9 +3,6 @@
 
 I’m Not a Robot explores the invisible labor embedded in everyday digital tasks. Using the familiar reCAPTCHA interface, the work reflects on systems of surveillance, control, and the silent collection of human input. Visual layers—unlocked through interaction—reveal how digital behavior unknowingly becomes data: tracked, recorded, and repurposed by systems that might extract value from it.
 
-
----
-
 ## Table of Contents
 
 - [Overview](#overview)
@@ -16,8 +13,7 @@ I’m Not a Robot explores the invisible labor embedded in everyday digital task
   - [End of Day](#end-of-day)
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
-
----
+  
 
 ## Overview
 
@@ -97,8 +93,6 @@ mgGlitch.min.js
 
 1. Click the **Stop Server** button in the Server Manager.
 2. After 10–15 seconds, Refresh each browser tab. All tabs should display: "This site can’t be reached."
-
----
 
 ## Development
 
